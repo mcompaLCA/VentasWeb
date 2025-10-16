@@ -1,0 +1,6 @@
+@Host = http://localhost:5219
+
+GET {{Host}}/healt/
+Accept: application/json
+
+###
