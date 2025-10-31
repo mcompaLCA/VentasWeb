@@ -6,11 +6,17 @@ using System;
 using System.Text.Json.Serialization;
 using VentasWeb;
 using VentasWeb.Models;
+using VentasWeb.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddCors();
+builder.Services.AddHttpClient("ProductecaLCA", c =>
+{
+    c.BaseAddress = new Uri("https://consultascda.casadelaudio.com/producteca/");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("duco-rest");
+});
 
 builder.Services.AddDbContext<AppDBContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")
@@ -18,6 +24,13 @@ builder.Services.AddDbContext<AppDBContext>(options =>
 
 builder.Services.AddOutputCache();
 builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options => options.SerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles);
+
+builder.Services.AddSingleton<HttpClientService>(sp =>
+{
+    var factory = sp.GetRequiredService<IHttpClientFactory>();
+    var logger = sp.GetService<ILogger<HttpClientService>>();
+    return new HttpClientService(factory, logger, null);
+});
 
 var app = builder.Build();
 
@@ -28,6 +41,7 @@ app.UseCors(builder =>
         .AllowAnyMethod() // Permite cualquier método HTTP (GET, POST, PUT, DELETE, etc.)
         .AllowAnyHeader(); // Permite cualquier encabezado en la solicitud
 });
+
 
 app.UseStaticFiles(); // Agregar middleware para servir archivos estáticos desde la carpeta wwwroot
 
@@ -96,9 +110,7 @@ app.MapGet("/precios-forzados", async (AppDBContext db) =>
     .WithTags("ObtenerDatos");
 
 
-
-
-app.MapPost("/subir/{tipo}", async (string tipo, HttpContext context, AppDBContext db, IOutputCacheStore outputCache ) =>
+app.MapPost("/subir/{tipo}", async (string tipo, HttpContext context, AppDBContext db, IOutputCacheStore outputCache) =>
 {
     try
     {
@@ -127,7 +139,7 @@ app.MapPost("/subir/{tipo}", async (string tipo, HttpContext context, AppDBConte
                 lineas = [.. lineas, linea];
             }
 
-            if(lineas.Length == 0) return Results.BadRequest("El archivo no contiene datos");
+            if (lineas.Length == 0) return Results.BadRequest("El archivo no contiene datos");
 
             switch (tipo.ToUpper())
             {
@@ -163,5 +175,40 @@ app.MapPost("/subir/{tipo}", async (string tipo, HttpContext context, AppDBConte
     }
 });
 
+
+app.MapPost("/establecerProducteca/", async (HttpContext context, IOutputCacheStore outputCache, HttpClientService http) =>
+{
+    try
+    {
+        var files = context.Request.Form.Files;
+        if (files.Count != 1)
+            return Results.BadRequest("Se debe recibir UN archivo");
+
+        using var reader = new StreamReader(files[0].OpenReadStream());
+        string? linea;
+        bool primera = true;
+        string[] lineas = [];
+        while ((linea = await reader.ReadLineAsync()) != null)
+        {
+            if (primera) // saltar cabecera
+            {
+                primera = false;
+                continue;
+            }
+            lineas = [.. lineas, linea];
+        }
+
+        if (lineas.Length == 0) return Results.BadRequest("El archivo no contiene datos");
+
+        var estPtec = new EstadoProducteca();
+        var res = await estPtec.Procesar(http, lineas);
+
+        return res.Count == 0 ? Results.Ok() : Results.BadRequest(res);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(ex.Message);
+    }
+});
 
 app.Run();

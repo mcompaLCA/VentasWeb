@@ -1,6 +1,7 @@
 ﻿
 const API_CONFIG = {
     upload: 'https://ventas-web.casadelaudio.com/subir',
+    upProducteca: 'https://ventas-web.casadelaudio.com/establecerProducteca',
     list: 'https://ventas-web.casadelaudio.com'
 };
 
@@ -50,6 +51,59 @@ async function uploadFile(type) {
 
         fileInput.value = '';
         
+    } catch (error) {
+        LoadingDialog.hide();
+        await Swal.fire({ icon: 'error', title: 'Error', text: error.message });
+    }
+}
+
+async function procesarEstadosProdu(type) {
+    const fileInput = document.getElementById(`fileProducteca`);
+    const file = fileInput.files[0];
+
+    if (!file) {
+        await Swal.fire({ icon: 'warning', title: 'No se ha seleccionado ningún archivo', text: 'Por favor, selecciona un archivo para subir.' });
+        return;
+    }
+
+    try {
+        LoadingDialog.show("Enviando datos...");
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const response = await fetch(`${API_CONFIG.upProducteca}`, {
+            method: 'POST',
+            body: formData
+        });
+
+
+        LoadingDialog.hide();
+
+        if (!response.ok) {
+            // Intentar leer el cuerpo como JSON (tu lista de errores)
+            const errores = await response.json();
+
+            if (Array.isArray(errores)) {
+                // Mostrar los errores de forma legible
+                const mensaje = errores.join('\n');
+                await Swal.fire({
+                    icon: 'error',
+                    title: 'Error al procesar el archivo',
+                    html: `<pre style="text-align:left">${mensaje}</pre>`
+                });
+            } else {
+                throw new Error('Error al subir el archivo');
+            }
+
+            return;
+        }
+
+        
+        await Swal.fire({ icon: 'success', title: 'Archivo procesado', text: 'El archivo se ha subido y fue procesado correctamente.' });
+
+        fileInput.value = '';
+
     } catch (error) {
         LoadingDialog.hide();
         await Swal.fire({ icon: 'error', title: 'Error', text: error.message });
@@ -136,6 +190,9 @@ function renderTableRow(type, item) {
 
 document.querySelectorAll('button[data-bs-toggle="tab"]').forEach(tab => {
     tab.addEventListener('shown.bs.tab', function (event) {
+        const hayQueCargar = event.target.getAttribute('data-loaddata');
+        if (hayQueCargar != 's') return;
+
         const targetId = event.target.getAttribute('data-bs-target').replace('#', '');
         loadData(targetId);
     });
